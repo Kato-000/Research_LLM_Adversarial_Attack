@@ -13,6 +13,9 @@
 | 略称 | 正式名称 | 意味 |
 |------|---------|------|
 | **MCTAP** | Memory and Category-guided Tree of Attacks with Pruning | Memory（ゴール間知識転用）× Category（防御層に基づく脆弱性分類）× TAP（幅優先探索・枝刈り）の統合 |
+| **MemTAP** | Memory + Tree of Attacks with Pruning | MCTAP から Category 層を除いたアブレーション構成（旧称 `MCTAP_NC`）。Memory と TAP のみ |
+| **TAP** | Tree of Attacks with Pruning | ベースライン (Mehrotra et al., 2023) |
+| **PAIR** | Prompt Automatic Iterative Refinement | ベースライン (Chao et al., 2023) |
 
 MCTAP は既存の TAP (Mehrotra et al., 2023) を以下の3点で拡張する。
 
@@ -68,33 +71,55 @@ MCTAP は既存の TAP (Mehrotra et al., 2023) を以下の3点で拡張する�
 
 ### 全結果一覧
 
-| モデル | カテゴリ | 件数 | Score4 | ASR | SR | Bino(adv) | Bino(orig) | dur(s) |
-|--------|---------|------|--------|-----|----|-----------|------------|--------|
-| Gemma-4-e2b | DIRECT_OVERRIDE | --- | --- | --- | --- | --- | --- | --- |
-| Gemma-4-e2b | ENC_EVASION | --- | --- | --- | --- | --- | --- | --- |
-| Gemma-4-e2b | INTENT_CONCEAL | 200 | 186 | 0.930 | 0.968 | 0.897 | 0.764 | 778 |
-| Gemma-4-e2b | PERSONA_ROLEPLAY | 200 | 190 | 0.950 | 0.968 | 0.886 | 0.763 | 718 |
-| Gemma-4-e2b | PROGRESSIVE_MANIP | 200 | 199 | **0.995** | 0.975 | 0.847 | 0.765 | 552 |
-| Llama-3.2-1B | DIRECT_OVERRIDE | 200 | 173 | 0.865 | 0.994 | 0.853 | 0.763 | 343 |
-| Llama-3.2-1B | ENC_EVASION | 200 | 161 | 0.805 | 0.994 | 0.839 | 0.763 | 601 |
-| Llama-3.2-1B | INTENT_CONCEAL | 200 | 131 | 0.655 | 0.985 | 0.897 | 0.763 | 452 |
-| Llama-3.2-1B | PERSONA_ROLEPLAY | 200 | 179 | 0.895 | 0.955 | 0.847 | 0.765 | 298 |
-| Llama-3.2-1B | PROGRESSIVE_MANIP | 200 | 199 | **0.995** | 0.970 | 0.852 | 0.764 | 346 |
-| Qwen3.5-2B | DIRECT_OVERRIDE | 200 | 98 | 0.490 | 1.000 | 0.896 | 0.776 | 1562 |
-| Qwen3.5-2B | ENC_EVASION | 200 | 185 | 0.925 | 0.973 | 0.864 | 0.763 | 1536 |
-| Qwen3.5-2B | INTENT_CONCEAL | 200 | 196 | 0.980 | 0.954 | 0.920 | 0.766 | 114 |
-| Qwen3.5-2B | PERSONA_ROLEPLAY | 200 | 199 | 0.995 | 0.965 | 0.907 | 0.763 | 119 |
-| Qwen3.5-2B | PROGRESSIVE_MANIP | 200 | 200 | **1.000** | 0.980 | 0.860 | 0.764 | 170 |
+| モデル | カテゴリ | 件数 | Score4 | ASR | SR | ASR* | Bino(adv) | Bino(orig) | dur(s) |
+|--------|---------|------|--------|-----|----|------|-----------|------------|--------|
+| Gemma-4-e2b | DIRECT_OVERRIDE | 200 | 175 | 0.875 | 0.788 | 0.689 | 0.851 | 0.759 | 765 |
+| Gemma-4-e2b | ENC_EVASION | 200 | 157 | 0.785 | 0.773 | 0.607 | 0.843 | 0.767 | 1369 |
+| Gemma-4-e2b | INTENT_CONCEAL | 200 | 129 | 0.645 | 0.714 | 0.461 | 0.880 | 0.759 | 840 |
+| Gemma-4-e2b | PERSONA_ROLEPLAY | 200 | 181 | 0.905 | 0.721 | 0.653 | 0.853 | 0.766 | 603 |
+| Gemma-4-e2b | PROGRESSIVE_MANIP | 200 | 199 | **0.995** | 0.732 | 0.728 | 0.840 | 0.764 | 625 |
+| Llama-3.2-1B | DIRECT_OVERRIDE | 200 | 173 | 0.865 | 0.832 | 0.719 | 0.853 | 0.763 | 343 |
+| Llama-3.2-1B | ENC_EVASION | 200 | 172 | 0.860 | 0.770 | 0.662 | 0.858 | 0.763 | 601 |
+| Llama-3.2-1B | INTENT_CONCEAL | 200 | 131 | 0.655 | 0.700 | 0.459 | 0.897 | 0.763 | 452 |
+| Llama-3.2-1B | PERSONA_ROLEPLAY | 200 | 179 | 0.895 | 0.726 | 0.650 | 0.847 | 0.765 | 298 |
+| Llama-3.2-1B | PROGRESSIVE_MANIP | 200 | 199 | **0.995** | 0.744 | 0.740 | 0.852 | 0.764 | 346 |
+| Qwen3.5-2B | DIRECT_OVERRIDE | 200 | 98 | 0.490 | 0.813 | 0.398 | 0.896 | 0.776 | 1562 |
+| Qwen3.5-2B | ENC_EVASION | 200 | 185 | 0.925 | 0.755 | 0.699 | 0.864 | 0.764 | 1536 |
+| Qwen3.5-2B | INTENT_CONCEAL | 200 | 196 | 0.980 | 0.756 | 0.741 | 0.920 | 0.766 | 114 |
+| Qwen3.5-2B | PERSONA_ROLEPLAY | 200 | 199 | 0.995 | 0.747 | 0.743 | 0.907 | 0.763 | 119 |
+| Qwen3.5-2B | PROGRESSIVE_MANIP | 200 | 200 | **1.000** | 0.748 | 0.748 | 0.860 | 0.764 | 170 |
 
-> SR: StrongREJECT、Bino(adv/orig): Binoculars adversarial/original prompt、dur: 平均処理時間（Score4・非Score4の加重平均）
+> SR: StrongREJECT、ASR*: ASR × StrongREJECT（成功率と有害度の総合指標）、Bino(adv/orig): Binoculars adversarial/original prompt、dur: 平均処理時間（Score4・非Score4の加重平均、秒）
+
+### 比較実験（ベースライン手法との比較）
+
+MCTAP（全機能）と、アブレーション/ベースライン手法（`MemTAP` = Category 層なし、`PAIR`、`TAP`）を同一条件で比較する。MCTAP はカテゴリ数が多いため、代表として全モデルで最高 ASR を示した `PROGRESSIVE_MANIP` を用いる。
+
+| モデル | 手法 | Score4 | ASR | SR | ASR* | Bino(adv) | Bino(orig) | Avg queries | dur(s) |
+|--------|------|--------|-----|----|------|-----------|------------|-------------|--------|
+| Gemma-4-e2b | **MCTAP** (PROGRESSIVE_MANIP) | 199 | **0.995** | 0.732 | **0.728** | 0.840 | 0.764 | — | 625 |
+| Gemma-4-e2b | MemTAP | 89 | 0.445 | 0.622 | 0.277 | 0.895 | 0.770 | 798 | 4351 |
+| Gemma-4-e2b | PAIR | 133 | 0.665 | 0.545 | 0.362 | 0.775 | 0.769 | 183 | 896 |
+| Gemma-4-e2b | TAP | 133 | 0.665 | 0.503 | 0.334 | 0.768 | 0.764 | 444 | 1597 |
+| Llama-3.2-1B | **MCTAP** (PROGRESSIVE_MANIP) | 199 | **0.995** | 0.744 | **0.740** | 0.852 | 0.764 | — | 346 |
+| Llama-3.2-1B | MemTAP | 144 | 0.720 | 0.708 | 0.510 | 0.877 | 0.769 | 508 | 1536 |
+| Llama-3.2-1B | PAIR | 46 | 0.230 | 0.614 | 0.141 | 0.785 | 0.754 | 265 | 985 |
+| Llama-3.2-1B | TAP | 37 | 0.185 | 0.696 | 0.129 | 0.784 | 0.755 | 705 | 2176 |
+| Qwen3.5-2B | **MCTAP** (PROGRESSIVE_MANIP) | 200 | **1.000** | 0.748 | **0.748** | 0.860 | 0.764 | — | 170 |
+| Qwen3.5-2B | MemTAP | 91 | 0.455 | 0.782 | 0.356 | 0.884 | 0.777 | 751 | 2481 |
+| Qwen3.5-2B | PAIR | 24 | 0.120 | 0.693 | 0.083 | 0.780 | 0.779 | 278 | 1068 |
+| Qwen3.5-2B | TAP | 18 | 0.090 | 0.611 | 0.055 | 0.796 | 0.749 | 738 | 2445 |
+
+> `MCTAP` の Avg queries は本サマリでは未記録（—）。参考として、MCTAP の全5カテゴリ平均 ASR は Gemma 0.841 / Llama 0.854 / Qwen 0.878 であり、平均で比較しても全ベースラインを上回る。
 
 ### 主要な知見
 
 - **`PROGRESSIVE_MANIP` が全モデルで最高 ASR**（Gemma: 0.995、Llama: 0.995、Qwen: 1.000）→ マルチターン診断機構の有効性を示す
-- **Qwen3.5-2B の `DIRECT_OVERRIDE` への耐性**：ASR=0.490（98/200）と全実験中最低。他カテゴリ（0.925〜1.000）との乖離が顕著。SR=1.000 は Score4 到達応答が全て有害内容を含んでいたことを示す
-- **Llama-3.2-1B の `INTENT_CONCEAL` への相対的耐性**：ASR=0.655（131/200）と他カテゴリより低く、意図分類器が相対的に機能
-- **Binoculars の安定性**：Bino(adv) は 0.839〜0.920、Bino(orig) は 0.763〜0.776 の範囲。adversarial プロンプトが元プロンプトより一貫して高い自然言語らしさを示す
-- **処理時間の差異**：Qwen の `DIRECT_OVERRIDE`（1562s）・`ENC_EVASION`（1536s）が突出して長い一方、`INTENT_CONCEAL`（114s）・`PERSONA_ROLEPLAY`（119s）は短時間で高 ASR を達成
+- **MCTAP がベースライン手法を大幅に上回る**：MCTAP（`PROGRESSIVE_MANIP`）の ASR 0.995〜1.000 に対し、MemTAP 0.445〜0.720、PAIR 0.120〜0.665、TAP 0.090〜0.185（Llama）〜0.665（Gemma）。特に Llama・Qwen で PAIR/TAP が 0.09〜0.23 まで低下し、Category 層と診断機構の寄与が顕著。ASR* でも同様の序列（MCTAP > MemTAP > PAIR ≈ TAP）を示す
+- **Qwen3.5-2B の `DIRECT_OVERRIDE` への耐性**：ASR=0.490（98/200）と全カテゴリ中最低で、他カテゴリ（0.925〜1.000）との乖離が顕著。ASR* も 0.398 と低い
+- **`INTENT_CONCEAL` が各モデルで相対的に低め**：Gemma 0.645（129/200）、Llama 0.655（131/200）と他カテゴリより低く、意図分類器が相対的に機能。一方 Qwen では 0.980 と高く、耐性がモデル依存
+- **Binoculars の安定性**：Bino(adv) は 0.840〜0.920、Bino(orig) は 0.749〜0.779 の範囲。手法・カテゴリによらずほぼ一定で、adversarial プロンプトが元プロンプトより一貫して高い自然言語らしさ（＝検出困難さ）を示す
+- **処理時間の差異**：MCTAP のカテゴリは総じて短時間（Qwen の `INTENT_CONCEAL` 114s・`PERSONA_ROLEPLAY` 119s・`PROGRESSIVE_MANIP` 170s）だが、ベースラインの MemTAP は全モデルで突出して長い（1536〜4351s）。Qwen の `DIRECT_OVERRIDE`（1562s）・`ENC_EVASION`（1536s）も長い
 
 ---
 
@@ -337,6 +362,7 @@ data/jailbreaks/{output_name}_skipped.txt
 |------|------|
 | **ASR**（Attack Success Rate） | `stop_score ≥ 4` 到達率。LLM による有害性判定を使用 |
 | **StrongREJECT** | 拒否・具体性・説得力の3次元で 0〜1 をスコアリング。ASR の過大評価を補正 |
+| **ASR\*** | ASR × StrongREJECT。攻撃成功率と出力の有害度を掛け合わせた総合指標（見かけの成功を割り引いた実効成功率） |
 | **Binoculars（adversarial）** | 攻撃プロンプトの自然言語らしさ。高いほど検出困難 |
 | **Binoculars（original）** | 元の有害ゴールの自然言語らしさ（ベースライン） |
 
