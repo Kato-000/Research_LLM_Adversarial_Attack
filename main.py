@@ -101,6 +101,14 @@ config = AttackConfig(
  
     # Memory
     memory_dir="data/memory",
+
+    # Ablation: set True + point memory_dir at a fresh directory (e.g.
+    # "data/memory_global_ablation") to run the "memory isolation OFF"
+    # condition of the memory-separation-vs-prompt-design ablation.
+    # Category-specific attacker prompts/evaluation are unaffected; only
+    # memory sharing across categories is toggled. Default False =
+    # current per-category MCTAP behavior.
+    memory_global_mode=False,
  
     # Attacker model
     attacker_remote=Model(
@@ -159,11 +167,19 @@ if __name__ == "__main__":
  
     summary_file = Path(config.output_base) / f"{config.output_name}_summary.json"
  
-    # Initialize per-category MemoryStore
+    # Initialize MemoryStore (per-category, or global if memory_global_mode)
     if config.memory_dir:
-        memory = MemoryStore.load(config.memory_dir, embedding_model=config.embedding_model)
+        memory = MemoryStore.load(
+            config.memory_dir,
+            embedding_model=config.embedding_model,
+            global_mode=config.memory_global_mode,
+        )
         stats = memory.stats()
-        logger.info(f"[+] MemoryStore loaded from '{config.memory_dir}': {stats}")
+        mode_label = "GLOBAL (ablation)" if config.memory_global_mode else "per-category"
+        logger.info(
+            f"[+] MemoryStore loaded from '{config.memory_dir}' "
+            f"[{mode_label}]: {stats}"
+        )
     else:
         memory = None
         logger.info("[+] Memory disabled (memory_dir=None)")
