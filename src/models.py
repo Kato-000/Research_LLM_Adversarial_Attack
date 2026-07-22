@@ -137,6 +137,14 @@ class AttackConfig(BaseModel):
     # e.g. data/memory/ENC_EVASION.pt, data/memory/PERSONA_ROLEPLAY.pt, ...
     memory_dir: Optional[str] = "data/memory"
 
+    # Ablation flag: if True, all VulnCategory memory lookups/writes share
+    # a single global store ({memory_dir}/GLOBAL.pt) instead of separate
+    # per-category stores. Category-specific attacker prompts and
+    # evaluation are unaffected by this flag — only memory isolation is
+    # toggled. Use a dedicated memory_dir for global-mode runs (do not
+    # point it at an existing per-category memory directory).
+    memory_global_mode: bool = False
+
     # Output paths
     output_name: str = "tap-attack"
     output_base: str = "data/jailbreaks/"

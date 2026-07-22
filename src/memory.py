@@ -158,13 +158,23 @@ class Memory:
 
 
 class MemoryStore:
-    """Per-category Memory manager.
+    """Per-category (or optionally global) Memory manager.
 
-    Maintains one Memory instance per VulnCategory, each backed by its own
-    .pt file. This allows the system to retrieve examples that were generated
-    using the same attack strategy as the current attempt.
+    Normal mode: maintains one Memory instance per VulnCategory, each backed
+    by its own .pt file. This allows the system to retrieve examples that
+    were generated using the same attack strategy as the current attempt.
 
-    File layout:
+    Global mode (``global_mode=True``): all VulnCategory keys resolve to a
+    single, shared Memory instance backed by one .pt file. This is an
+    ablation configuration used to isolate the contribution of
+    category-separated memory from the contribution of the
+    category-specific attacker prompts / evaluation logic, which are
+    unaffected by this flag: ``retrieve()`` / ``add()`` keep the exact same
+    signature and are called identically by src/attack.py regardless of
+    mode, since every VulnCategory simply maps to the same underlying
+    Memory object.
+
+    File layout (normal mode):
         {memory_dir}/ENC_EVASION.pt
         {memory_dir}/DIRECT_OVERRIDE.pt
         {memory_dir}/PERSONA_ROLEPLAY.pt
@@ -172,8 +182,13 @@ class MemoryStore:
         {memory_dir}/PROGRESSIVE_MANIP.pt
         {memory_dir}/CONTEXT_INJECTION.pt
 
+    File layout (global mode):
+        {memory_dir}/GLOBAL.pt
+
     Usage:
         store = MemoryStore.load("data/memory", embedding_model)
+        store = MemoryStore.load("data/memory_ablation", embedding_model,
+                                  global_mode=True)
 
         # Retrieve examples for a specific category
         examples = store.retrieve(goal, category=VulnCategory.PERSONA_ROLEPLAY, k=3)
@@ -182,18 +197,45 @@ class MemoryStore:
         store.add(goal, data={...}, category=VulnCategory.PERSONA_ROLEPLAY)
     """
 
-    def __init__(self, memories: Dict[VulnCategory, Memory]) -> None:
+    def __init__(self, memories: Dict[VulnCategory, Memory], global_mode: bool = False) -> None:
         self._memories = memories
+        self.global_mode = global_mode
 
     @classmethod
-    def load(cls, memory_dir: str, embedding_model: Model) -> "MemoryStore":
-        """Load (or create) one Memory per VulnCategory from memory_dir.
+    def load(
+        cls,
+        memory_dir: str,
+        embedding_model: Model,
+        global_mode: bool = False,
+    ) -> "MemoryStore":
+        """Load (or create) Memory instance(s) from memory_dir.
 
-        If a category's .pt file already exists it is loaded; otherwise a
-        new empty Memory is created (and written on first add).
+        If global_mode is False (default): one Memory per VulnCategory, as
+        before. If a category's .pt file already exists it is loaded;
+        otherwise a new empty Memory is created (and written on first add).
+
+        If global_mode is True: a single shared Memory backed by
+        ``{memory_dir}/GLOBAL.pt`` is created (or loaded), and every
+        VulnCategory member maps to this same instance. Use a distinct
+        memory_dir for global-mode runs so they do not mix with, or
+        overwrite, an existing per-category memory directory.
         """
         dirpath = Path(memory_dir)
         dirpath.mkdir(parents=True, exist_ok=True)
+
+        if global_mode:
+            fpath = dirpath / "GLOBAL.pt"
+            if fpath.exists():
+                logger.info(f"[MemoryStore] Loading GLOBAL memory from {fpath}")
+                shared = Memory.from_file(str(fpath), embedding_model)
+            else:
+                logger.info(f"[MemoryStore] Creating new GLOBAL memory at {fpath}")
+                shared = Memory.new(str(fpath), embedding_model)
+            # Every category resolves to the SAME Memory object, so
+            # self._memories[category] in retrieve()/add() below reads and
+            # writes one shared store no matter which category is passed.
+            memories: Dict[VulnCategory, Memory] = {cat: shared for cat in VulnCategory}
+            return cls(memories, global_mode=True)
 
         memories: Dict[VulnCategory, Memory] = {}
         for cat in VulnCategory:
@@ -205,7 +247,7 @@ class MemoryStore:
                 logger.info(f"[MemoryStore] Creating new memory for {cat.value} at {fpath}")
                 memories[cat] = Memory.new(str(fpath), embedding_model)
 
-        return cls(memories)
+        return cls(memories, global_mode=False)
 
     def retrieve(
         self,
@@ -214,6 +256,11 @@ class MemoryStore:
         k: int = 3,
     ) -> List[str]:
         """Return up to k prompt hints for the given category.
+
+        In global mode, ``category`` is still required for API
+        compatibility with src/attack.py, but is ignored for indexing
+        purposes: every category maps to the same shared Memory, so hints
+        may originate from goals attempted under a different category.
 
         Records store a unified ``conversation`` list regardless of category:
             [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
@@ -240,17 +287,38 @@ class MemoryStore:
     def add(self, goal: str, data: dict, category: VulnCategory) -> None:
         """Save a successful attack record under the given category.
 
+        In global mode this appends to the single shared Memory
+        regardless of ``category`` (the record's own ``vuln_category``
+        field, set by the caller in src/attack.py, still preserves which
+        category actually produced it for later analysis).
+
         Args:
             goal:     The attack goal used as the embedding key
             data:     Full attack record dict (adversarial_prompt, score, etc.)
             category: The VulnCategory this attack belongs to
         """
         self._memories[category].add(key=goal, new_data=data)
-        logger.info(
-            f"[MemoryStore] Saved to {category.value} "
-            f"(total: {len(self._memories[category])})"
-        )
+        if self.global_mode:
+            logger.info(
+                f"[MemoryStore] Saved to GLOBAL memory "
+                f"(originating category: {category.value}, "
+                f"total: {len(self._memories[category])})"
+            )
+        else:
+            logger.info(
+                f"[MemoryStore] Saved to {category.value} "
+                f"(total: {len(self._memories[category])})"
+            )
 
     def stats(self) -> Dict[str, int]:
-        """Return the number of stored records per category."""
+        """Return the number of stored records per category.
+
+        In global mode all categories share one Memory, so this returns a
+        single "GLOBAL" entry instead of repeating the same count under
+        every category name (which would otherwise look misleadingly like
+        6 separate, equally-sized stores).
+        """
+        if self.global_mode:
+            any_cat = next(iter(self._memories))
+            return {"GLOBAL": len(self._memories[any_cat])}
         return {cat.value: len(mem) for cat, mem in self._memories.items()}
