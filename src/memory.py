@@ -3,7 +3,10 @@ memory.py — RAG store for memorizing and retrieving successful attacks
 
 Responsibilities of this module:
   - Store past successful attacks as embedding vectors (.pt files)
-  - Retrieve top-k results for a new goal using cosine similarity
+  - Retrieve top-k results for a new goal using cosine similarity, or via
+    two ablation modes ("random" / "curated") that isolate whether the
+    benefit of memory comes from goal-relevance retrieval specifically,
+    or merely from having concrete example prompts present at all.
 
 Storage format — one file per VulnCategory:
     data/memory/ENC_EVASION.pt
@@ -20,13 +23,14 @@ Contents of data[i]:
     {
         "adversarial_prompt": str   <- successful adversarial prompt
         "goal":               str   <- attack goal
-        "score":              int   <- evaluation score (3 or 4)
+        "score":              int   <- evaluation score (1-10)
         "vuln_category":      str   <- vulnerability category used
     }
 """
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Dict, List, Optional
 from typing_extensions import Self
@@ -59,6 +63,12 @@ class Memory:
 
         # Retrieve similar successful examples for a goal
         examples = mem.retrieve(key=goal, k=3)
+
+        # Ablation: ignore goal-similarity, sample randomly
+        examples = mem.retrieve_random(k=3)
+
+        # Ablation: highest-scoring examples, regardless of goal
+        examples = mem.top_by_score(k=3)
     """
 
     def __init__(
@@ -153,6 +163,32 @@ class Memory:
         )
         return [self.data[idx] for idx in best_indices]
 
+    def retrieve_random(self, k: int = 3) -> List[dict]:
+        """Ablation: ignore goal-similarity entirely, sample k records at random.
+
+        Re-sampled on every call (does not depend on the goal), so it
+        isolates the effect of "having some concrete example present" from
+        the effect of "the example being relevant to this specific goal".
+        """
+        if len(self.data) == 0:
+            return []
+        k = min(k, len(self.data))
+        idx = random.sample(range(len(self.data)), k)
+        return [self.data[i] for i in idx]
+
+    def top_by_score(self, k: int = 3) -> List[dict]:
+        """Ablation: deterministic top-k by score, ignoring the goal entirely.
+
+        Used for the "curated" static condition — the caller is expected to
+        compute this once (e.g. at MemoryStore.load time) and cache the
+        result so the same examples are reused for every goal in the run,
+        isolating the effect of goal-adaptive retrieval.
+        """
+        if len(self.data) == 0:
+            return []
+        ranked = sorted(self.data, key=lambda d: d.get("score", 0), reverse=True)
+        return ranked[:k]
+
     def __len__(self) -> int:
         return len(self.data)
 
@@ -200,6 +236,9 @@ class MemoryStore:
     def __init__(self, memories: Dict[VulnCategory, Memory], global_mode: bool = False) -> None:
         self._memories = memories
         self.global_mode = global_mode
+        # "curated"モード用キャッシュ：カテゴリ（globalモードでは"GLOBAL"固定）
+        # ごとに実行内で一度だけ選定し、以降固定する。
+        self._curated_cache: Dict[object, List[dict]] = {}
 
     @classmethod
     def load(
@@ -249,18 +288,9 @@ class MemoryStore:
 
         return cls(memories, global_mode=False)
 
-    def retrieve(
-        self,
-        goal: str,
-        category: VulnCategory,
-        k: int = 3,
-    ) -> List[str]:
-        """Return up to k prompt hints for the given category.
-
-        In global mode, ``category`` is still required for API
-        compatibility with src/attack.py, but is ignored for indexing
-        purposes: every category maps to the same shared Memory, so hints
-        may originate from goals attempted under a different category.
+    @staticmethod
+    def _format_records(records: List[dict]) -> List[str]:
+        """Convert raw stored records into hint strings shown to the attacker.
 
         Records store a unified ``conversation`` list regardless of category:
             [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
@@ -269,8 +299,6 @@ class MemoryStore:
         sees the full multi-turn structure (or the single prompt for other categories).
         Falls back to ``adversarial_prompt`` for older records without ``conversation``.
         """
-        mem = self._memories[category]
-        records = mem.retrieve(key=goal, k=k)
         results = []
         for r in records:
             if r.get("conversation"):
@@ -283,6 +311,57 @@ class MemoryStore:
             else:
                 results.append(r.get("adversarial_prompt", ""))
         return results
+
+    def retrieve(
+        self,
+        goal: str,
+        category: VulnCategory,
+        k: int = 3,
+    ) -> List[str]:
+        """Return up to k prompt hints for the given category, chosen by
+        semantic similarity to ``goal`` (memory_mode="retrieved").
+
+        In global mode, ``category`` is still required for API
+        compatibility with src/attack.py, but is ignored for indexing
+        purposes: every category maps to the same shared Memory, so hints
+        may originate from goals attempted under a different category.
+        """
+        mem = self._memories[category]
+        records = mem.retrieve(key=goal, k=k)
+        return self._format_records(records)
+
+    def retrieve_random(
+        self,
+        category: VulnCategory,
+        k: int = 3,
+    ) -> List[str]:
+        """Ablation: return k hints sampled at random, ignoring goal
+        similarity entirely (memory_mode="random"). Re-sampled on every
+        call. Isolates "having some concrete example" from "the example
+        being relevant to this goal".
+        """
+        mem = self._memories[category]
+        records = mem.retrieve_random(k=k)
+        return self._format_records(records)
+
+    def retrieve_curated(
+        self,
+        category: VulnCategory,
+        k: int = 3,
+    ) -> List[str]:
+        """Ablation: return the same k highest-scoring hints for every goal
+        in the run (memory_mode="curated"). The selection is computed once
+        per category (or once globally, in global_mode) and cached, so it
+        stays fixed across the whole run — isolating "goal-adaptive
+        retrieval" from "having good, but static, examples available".
+        No new content is generated here; the examples are drawn entirely
+        from records already present in the store.
+        """
+        cache_key = "GLOBAL" if self.global_mode else category
+        if cache_key not in self._curated_cache:
+            mem = self._memories[category]
+            self._curated_cache[cache_key] = mem.top_by_score(k=k)
+        return self._format_records(self._curated_cache[cache_key])
 
     def add(self, goal: str, data: dict, category: VulnCategory) -> None:
         """Save a successful attack record under the given category.
